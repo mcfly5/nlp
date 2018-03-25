@@ -3,6 +3,10 @@ package main
 import (
 	"flag"
 	"fmt"
+	"hash/crc32"
+	"io/ioutil"
+	"os"
+	"strconv"
 	"strings"
 	"time"
 	//"html"
@@ -38,10 +42,12 @@ type StatDiv struct {
 }
 
 var (
-	WORKERS  int    = 5
-	TIME_OUT int    = 100
-	HTTPS    bool   = true
-	HOST     string = "meduza.io"
+	WORKERS   int    = 5
+	TIME_OUT  int    = 100
+	HTTPS     bool   = true
+	HOST      string = "meduza.io"
+	DATA_DIR  string = "data/"
+	MAX_LINKS int    = 50
 )
 
 func grabber() <-chan string {
@@ -66,12 +72,37 @@ func depth(node *html.Node) int {
 	return 0
 }
 
-func getDoc(link string, m map[string]int, links *Queue) {
-	doc, err := goquery.NewDocument(link)
-	if err != nil {
-		fmt.Println("Error: ")
-		fmt.Println(err)
+func getLinks(doc *goquery.Document, m map[string]int, links *Queue) {
+
+	//Searching links
+	doc.Find("a").Each(func(i int, s *goquery.Selection) {
+		if href, ok := s.Attr("href"); ok {
+			count := m[href]
+			if href[0] == 47 {
+				if count == 0 {
+					links.Add(constructURL(href))
+					fmt.Printf("New link found : %d - %d - %s - %s \n", i, href[0], s.Text(), href)
+				}
+				m[href] = count + 1
+			}
+		}
+	})
+}
+
+func constructURL(link string) string {
+	var url string
+
+	if HTTPS {
+		url = "https://"
+	} else {
+		url = "http://"
 	}
+
+	url = url + HOST + link
+	return url
+}
+
+func getArticle(doc *goquery.Document) {
 
 	var max, maxValue int = 0, 0
 
@@ -119,34 +150,56 @@ func getDoc(link string, m map[string]int, links *Queue) {
 
 	*/
 
-	//Searching links
-	doc.Find("a").Each(func(i int, s *goquery.Selection) {
-		//		doc.Find(".sidebar-reviews article .content-block").Each(func(i int, s *goquery.Selection) {
-
-		if href, ok := s.Attr("href"); ok {
-			count := m[href]
-			if href[0] == 47 {
-				if count == 0 {
-					links.Add(constructURL(href))
-				}
-				m[href] = count + 1
-			}
-			//fmt.Printf("%d - %d - %s - %s - %d\n", i, href[0], s.Text(), href, count)
-		}
-	})
 }
 
-func constructURL(link string) string {
-	var url string
+//Read goquery doc from file
+func readDocumentFromFile(fileName string) (doc *goquery.Document, err error) {
 
-	if HTTPS {
-		url = "https://"
-	} else {
-		url = "http://"
+	bs, err := ioutil.ReadFile(fileName)
+	if err != nil {
+		return doc, err
 	}
 
-	url = url + HOST + link
-	return url
+	strFromFile := string(bs)
+	fmt.Println(strFromFile)
+
+	ior := strings.NewReader(strFromFile)
+
+	doc, err = goquery.NewDocumentFromReader(ior)
+	if err != nil {
+		return doc, err
+	}
+
+	return doc, err
+
+}
+
+func saveStringToFile(str string) (err error) {
+	h := crc32.NewIEEE()
+	h.Write([]byte(str))
+	v := h.Sum32()
+	bytes := strconv.Itoa(int(v))
+	dirPath := DATA_DIR + bytes[0:2] + "/" + bytes[2:4]
+	err = os.MkdirAll(dirPath, os.ModePerm)
+	if err != nil {
+		return err
+	}
+
+	fileName := dirPath + "/" + bytes
+
+	file, err := os.Create(fileName)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	_, err = file.WriteString(str)
+	if err != nil {
+		return err
+	}
+
+	return nil
+
 }
 
 func main() {
@@ -161,25 +214,53 @@ func main() {
 	links := make(Queue, 0)
 
 	//getDoc(constructURL(""), m, &links)
-	fmt.Println(links)
-	fmt.Println("Links for downloading: ", len(links))
-	fmt.Println("Total links: ", len(m))
+	//	fmt.Println(links)
+	//	getDoc("https://meduza.io/news/2018/03/11/v-kitae-otmenili-ogranichenie-sroka-prebyvaniya-u-vlasti-dlya-lidera-strany", m, &links)
+	links.Add("https://meduza.io/news/2018/03/11/v-kitae-otmenili-ogranichenie-sroka-prebyvaniya-u-vlasti-dlya-lidera-strany")
+
+	var i int = 0
+	for next, exists := links.Remove(); exists; {
+		fmt.Println("Links for downloading: ", len(links))
+		fmt.Println("Total links: ", len(m))
+		fmt.Println("Next: ", next)
+
+		doc, err := goquery.NewDocument(next)
+		if err != nil {
+			fmt.Println("Error: ")
+			fmt.Println(err)
+		}
+
+		stringForWrite, err := doc.Selection.Html()
+		if err != nil {
+			fmt.Println("Error: ")
+			fmt.Println(err)
+		}
+
+		err = saveStringToFile(stringForWrite)
+		if err != nil {
+			fmt.Println("Error: ")
+			fmt.Println(err)
+		}
+
+		//Example: get links from goquery doc
+		getLinks(doc, m, &links)
+
+		i++
+		if i > MAX_LINKS {
+			break
+		}
+		next, exists = links.Remove()
+
+	}
+
 	/*
-		var i int = 0
-			for next, exists := links.Remove(); exists; {
-				getDoc(next, m, &links)
-				fmt.Println("Next: ", next)
-				fmt.Println(links)
-				fmt.Println("Links for downloading: ", len(links))
-				fmt.Println("Total links: ", len(m))
-				i++
-				if i > 5 {
-					break
-				}
-				next, exists = links.Remove()
-			}
+		//Example: read goquery from file
+		doc1, err := readDocumentFromFile(fileName)
+		if err != nil {
+			fmt.Println("Error: ")
+			fmt.Println(err)
+		}
 	*/
 
-	getDoc("https://meduza.io/news/2018/03/11/v-kitae-otmenili-ogranichenie-sroka-prebyvaniya-u-vlasti-dlya-lidera-strany", m, &links)
-
+	//fmt.Println(doc.Selection.Html())
 }
