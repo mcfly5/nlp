@@ -17,6 +17,11 @@ type XMLDictionary struct {
 	Links   Links    `xml:"links"`
 }
 
+type XMLDataStat struct {
+	XMLName xml.Name `xml:"annotation"`
+	L       []L      `xml:"text>paragraphs>paragraph>sentence>tokens>token>tfr>v>l"`
+}
+
 type Lemmata struct {
 	XMLName  xml.Name `xml:"lemmata"`
 	LemmList []Lemma  `xml:"lemma"`
@@ -41,6 +46,11 @@ type Lemma struct {
 	F       []F      `xml:"f"`
 }
 
+type LemmaS struct {
+	XMLName xml.Name `xml:"annotation"`
+	L       []L      `xml:"text>paragraphs>paragraph>sentence>tokens>token>tfr>v>l"`
+}
+
 type L struct {
 	T string `xml:"t,attr"`
 	G []G    `xml:"g"`
@@ -54,11 +64,6 @@ type F struct {
 	T string `xml:"t,attr"`
 }
 
-type Address struct {
-	City  string `xml:"city" json:"city,omitempty"`
-	State string `xml:"state" json:"state,omitempty"`
-}
-
 type FirstForm struct {
 	Form  string
 	Gramm string
@@ -67,27 +72,29 @@ type FirstForm struct {
 var dictForms map[string]map[int]bool
 var dictLemmes map[int]FirstForm
 var dictLinks map[int]int
+var statDict map[string]map[string]int
 
 func main() {
 
-	//Building the dictionary
-
+	//Reading and parssing XML from file
 	//rawXmlData := "<data><person><firstname>Nic</firstname><lastname>Raboy</lastname><address><city>San Francisco</city><state>CA</state></address></person><person><firstname>Maria</firstname><lastname>Raboy</lastname></person></data>"
 	//rawXmlData, _ := strconv.Unquote(setData())
-	rawXmlData := setData()
+	rawXmlData := readStringFromFile("dict.opcorpora.xml")
 	//fmt.Printf(rawXmlData)
 	var data XMLDictionary
-	xml.Unmarshal([]byte(rawXmlData), &data)
+	xml.Unmarshal([]byte(*rawXmlData), &data)
 
 	fmt.Println("Lemmes in XML  :", len(data.Lemmata.LemmList))
 	fmt.Println("Links  in XML  :", len(data.Links.LinkList))
 
+	//Building the dictionary
 	dictLemmes = make(map[int]FirstForm)
 	dictForms = make(map[string]map[int]bool)
 	dictLinks = make(map[int]int)
 
 	var lemmForInsert FirstForm
 
+	//Links
 	var countBadLinks int
 	for _, link := range data.Links.LinkList {
 
@@ -111,6 +118,7 @@ func main() {
 
 	fmt.Println("Bad links :", countBadLinks)
 
+	//Lemmes
 	for _, lemma := range data.Lemmata.LemmList {
 		id, err := strconv.Atoi(lemma.Id)
 		if err != nil {
@@ -137,8 +145,30 @@ func main() {
 	fmt.Println("Lemmes in dict :", len(dictLemmes))
 	fmt.Println("Forms in dict  :", len(dictForms))
 
+	//Frequency
+	rawXmlData = readStringFromFile("annot.opcorpora.no_ambig.xml")
+	var dataStat XMLDataStat
+	err := xml.Unmarshal([]byte(*rawXmlData), &dataStat)
+	if err != nil {
+		fmt.Printf("error: %v", err)
+		return
+	}
+
+	statDict = make(map[string]map[string]int)
+
+	fmt.Println("Tokens:", len(dataStat.L))
+	for _, k := range dataStat.L {
+		if _, exists := statDict[k.T]; !exists {
+			statDict[k.T] = make(map[string]int)
+			statDict[k.T][k.G[0].V] = 1
+		} else {
+			statDict[k.T][k.G[0].V]++
+		}
+	}
+
+	//Main
 	strToSplit := `Стала стабильнее экономическая и политическая обстановка, предприятия вывели из тени зарплаты сотрудников.
-	Все Гришины одноклассники уже побывали за границей, он был чуть ли не единственным, кого не вывозили никуда дальше Красной Пахры.`
+	Все Гришины одноклассники уже побывали за границей, он был чуть ли не единственным, кого не вывозили никуда дальше Красной Пахры. Воркалось.`
 
 	// Preparing the text
 	r := strings.NewReplacer(".", " ", ",", " ", ";", " ", "!", " ", "?", " ")
@@ -150,21 +180,40 @@ func main() {
 	for _, wordOrig := range words {
 		word := strings.ToLower(wordOrig)
 		str33 := ""
-		for key, _ := range dictForms[word] {
+		maxStat := -1
+		fmt.Println("\n", word, ":")
+		for key, j := range dictForms[word] {
+
+			fmt.Println("\t", key, j, ":")
+
 			//str33 = str33 + ", " + strconv.Itoa(key) + dictLemmes[key].Form + "=" + dictLemmes[key].Gramm
 			if val, exists := dictLinks[key]; exists {
 				//str33 = str33 + "->" + strconv.Itoa(val) + dictLemmes[val].Form + "=" + dictLemmes[val].Gramm
-				str33 = str33 + dictLemmes[val].Form + "=" + dictLemmes[val].Gramm
+				fmt.Print("\tclean:")
+				str33 = str33 + "=" + dictLemmes[val].Gramm + "#"
+				//				str33 = str33 + dictLemmes[val].Form + "=" + dictLemmes[val].Gramm
 			} else {
-				str33 = str33 + ", " + dictLemmes[key].Form + "=" + dictLemmes[key].Gramm
+				fmt.Print("\tdirt:")
+				if maxStat < statDict[dictLemmes[key].Form][dictLemmes[key].Gramm] {
+					str33 = str33 + "=" + dictLemmes[key].Gramm + "#" //+ ":" + strconv.Itoa(statDict[dictLemmes[key].Form][dictLemmes[key].Gramm])
+					//str33 = str33 + dictLemmes[key].Form + "=" + dictLemmes[key].Gramm //+ ":" + strconv.Itoa(statDict[dictLemmes[key].Form][dictLemmes[key].Gramm])
+					maxStat = statDict[dictLemmes[key].Form][dictLemmes[key].Gramm]
+				}
 			}
+			fmt.Println("\t\t", str33)
+
+		}
+		//str33 = str33 + " ; Max:" + strconv.Itoa(maxStat)
+		if len(dictForms[word]) == 0 {
+			//Unknown word, need processing through trie
+			str33 = "NI"
 		}
 		str33 = strings.Trim(str33, ",")
 		str33 = strings.TrimSpace(str33)
-		replacerGramm := strings.NewReplacer("NOUN", "S", "INFN", "V", "ADJF", "A", "PREP", "PR", "NPRO", "NI", "PRCL", "ADV", "ADVB", "NI")
+		replacerGramm := strings.NewReplacer("NOUN", "S", "INFN", "V", "ADJF", "A", "PREP", "PR", "PRCL", "ADV", "ADVB", "ADV", "NPRO", "NI")
 		str33 = replacerGramm.Replace(str33)
 
-		fmt.Print(wordOrig, "{", str33, "} ")
+		//	fmt.Print(wordOrig, "{", str33, "} ")
 		//		fmt.Print(word, " {", dictLemmes[dictForms[word][0]].Form, ", ", dictForms[word][0], ", ", dictLemmes[dictForms[word][0]].Gramm, "} ")
 
 	}
@@ -173,16 +222,18 @@ func main() {
 	//fmt.Println(string(jsonData))
 }
 
-func setData() (str string) {
+func readStringFromFile(file string) *string {
 
 	//	bs2, err := ioutil.ReadFile("dict_test.xml")
 
-	bs2, err := ioutil.ReadFile("dict.opcorpora.xml")
+	str := new(string)
+
+	bs2, err := ioutil.ReadFile(file)
 	if err != nil {
 		fmt.Println("Error while opening a file #2...")
-		return
+		return nil
 	}
-	str = string(bs2)
+	*str = string(bs2)
 
 	//println("Content #2:", str)
 	/*
