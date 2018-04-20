@@ -1,6 +1,7 @@
 package main
 
 import (
+	"os"
 	//    "encoding/json"
 
 	"encoding/xml"
@@ -167,59 +168,70 @@ func main() {
 	}
 
 	//Main
-	strToSplit := `Стала стабильнее экономическая и политическая обстановка, предприятия вывели из тени зарплаты сотрудников.
-	Все Гришины одноклассники уже побывали за границей, он был чуть ли не единственным, кого не вывозили никуда дальше Красной Пахры. Воркалось.`
+	//strToSplit := `Стала стабильнее экономическая и политическая обстановка, предприятия вывели из тени зарплаты сотрудников.
+	//Все Гришины одноклассники уже побывали за границей, он был чуть ли не единственным, кого не вывозили никуда дальше Красной Пахрыры. Воркалось.`
 
+	var input string
+	fmt.Scanln(&input)
+
+	bs, err := ioutil.ReadFile("text.txt")
+	if err != nil {
+		fmt.Println(err)
+	}
+
+	fileForWrite, err := os.Create("text.out")
+	if err != nil {
+		fmt.Println("Can't open file for write")
+	}
+	defer fileForWrite.Close()
+
+	strToSplit := string(bs)
+
+	fmt.Println(strToSplit)
 	// Preparing the text
 	r := strings.NewReplacer(".", " ", ",", " ", ";", " ", "!", " ", "?", " ")
 	strToSplit = r.Replace(strToSplit)
-	words := strings.Fields(strToSplit)
-	fmt.Println(words)
-	//fmt.Println(dictForms)
+	row := strings.Split(strToSplit, "\n")
+	for _, unsplittedWords := range row {
+		words := strings.Fields(unsplittedWords)
+		//fmt.Println(dictForms)
 
-	for _, wordOrig := range words {
-		word := strings.ToLower(wordOrig)
-		str33 := ""
-		maxStat := -1
-		fmt.Println("\n", word, ":")
-		for key, j := range dictForms[word] {
+		for _, wordOrig := range words {
+			word := strings.ToLower(wordOrig)
+			str33 := ""
+			maxStat := -1
+			var candidate int
+			for key, _ := range dictForms[word] {
 
-			fmt.Println("\t", key, j, ":")
-
-			//str33 = str33 + ", " + strconv.Itoa(key) + dictLemmes[key].Form + "=" + dictLemmes[key].Gramm
-			if val, exists := dictLinks[key]; exists {
-				//str33 = str33 + "->" + strconv.Itoa(val) + dictLemmes[val].Form + "=" + dictLemmes[val].Gramm
-				fmt.Print("\tclean:")
-				str33 = str33 + "=" + dictLemmes[val].Gramm + "#"
-				//				str33 = str33 + dictLemmes[val].Form + "=" + dictLemmes[val].Gramm
-			} else {
-				fmt.Print("\tdirt:")
-				if maxStat < statDict[dictLemmes[key].Form][dictLemmes[key].Gramm] {
-					str33 = str33 + "=" + dictLemmes[key].Gramm + "#" //+ ":" + strconv.Itoa(statDict[dictLemmes[key].Form][dictLemmes[key].Gramm])
-					//str33 = str33 + dictLemmes[key].Form + "=" + dictLemmes[key].Gramm //+ ":" + strconv.Itoa(statDict[dictLemmes[key].Form][dictLemmes[key].Gramm])
-					maxStat = statDict[dictLemmes[key].Form][dictLemmes[key].Gramm]
+				if val, exists := dictLinks[key]; exists {
+					candidate = val
+				} else {
+					candidate = key
+				}
+				if maxStat < statDict[dictLemmes[candidate].Form][dictLemmes[candidate].Gramm] {
+					str33 = dictLemmes[candidate].Form + "=" + dictLemmes[candidate].Gramm // + ":" + strconv.Itoa(statDict[dictLemmes[candidate].Form][dictLemmes[candidate].Gramm])
+					maxStat = statDict[dictLemmes[candidate].Form][dictLemmes[candidate].Gramm]
 				}
 			}
-			fmt.Println("\t\t", str33)
+			if len(dictForms[word]) == 0 {
+				//Unknown word, need processing through trie
+				str33 = word + "=NI"
+			}
+			str33 = strings.Trim(str33, ",")
+			str33 = strings.TrimSpace(str33)
+			replacerGramm := strings.NewReplacer("NOUN", "S", "INFN", "V", "ADJF", "A", "PREP", "PR", "PRCL", "ADV", "ADVB", "ADV", "NPRO", "NI")
+			str33 = replacerGramm.Replace(str33)
+
+			fmt.Print(wordOrig, "{", str33, "} ")
+			fileForWrite.WriteString(wordOrig + "{" + str33 + "} ")
 
 		}
-		//str33 = str33 + " ; Max:" + strconv.Itoa(maxStat)
-		if len(dictForms[word]) == 0 {
-			//Unknown word, need processing through trie
-			str33 = "NI"
-		}
-		str33 = strings.Trim(str33, ",")
-		str33 = strings.TrimSpace(str33)
-		replacerGramm := strings.NewReplacer("NOUN", "S", "INFN", "V", "ADJF", "A", "PREP", "PR", "PRCL", "ADV", "ADVB", "ADV", "NPRO", "NI")
-		str33 = replacerGramm.Replace(str33)
 
-		//	fmt.Print(wordOrig, "{", str33, "} ")
-		//		fmt.Print(word, " {", dictLemmes[dictForms[word][0]].Form, ", ", dictForms[word][0], ", ", dictLemmes[dictForms[word][0]].Gramm, "} ")
-
+		//jsonData, _ := json.Marshal(data)
+		//fmt.Println(string(jsonData))
+		fmt.Println("")
+		fileForWrite.WriteString("\n")
 	}
-
-	//jsonData, _ := json.Marshal(data)
-	//fmt.Println(string(jsonData))
 }
 
 func readStringFromFile(file string) *string {
@@ -230,7 +242,7 @@ func readStringFromFile(file string) *string {
 
 	bs2, err := ioutil.ReadFile(file)
 	if err != nil {
-		fmt.Println("Error while opening a file #2...")
+		fmt.Println("Error while opening a file - ", file, "...")
 		return nil
 	}
 	*str = string(bs2)
