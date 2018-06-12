@@ -47,7 +47,7 @@ var (
 	HTTPS     bool   = true
 	HOST      string = "meduza.io"
 	DATA_DIR  string = "data/"
-	MAX_LINKS int    = 50
+	MAX_LINKS int    = 5000
 )
 
 func grabber() <-chan string {
@@ -78,12 +78,15 @@ func getLinks(doc *goquery.Document, m map[string]int, links *Queue) {
 	doc.Find("a").Each(func(i int, s *goquery.Selection) {
 		if href, ok := s.Attr("href"); ok {
 			count := m[href]
-			if href[0] == 47 {
-				if count == 0 {
-					links.Add(constructURL(href))
-					fmt.Printf("New link found : %d - %d - %s - %s \n", i, href[0], s.Text(), href)
+			if len(href) > 10 {
+				firstPart := href[1:10]
+				if href[0] == 47 && (strings.Contains(firstPart, "news") || strings.Contains(firstPart, "feature") || strings.Contains(firstPart, "shapito")) {
+					if count == 0 {
+						links.Add(constructURL(href))
+						fmt.Printf("New link found : %d - %d - %s - %s \n", i, href[0], s.Text(), href)
+					}
+					m[href] = count + 1
 				}
-				m[href] = count + 1
 			}
 		}
 	})
@@ -216,13 +219,16 @@ func main() {
 	//getDoc(constructURL(""), m, &links)
 	//	fmt.Println(links)
 	//	getDoc("https://meduza.io/news/2018/03/11/v-kitae-otmenili-ogranichenie-sroka-prebyvaniya-u-vlasti-dlya-lidera-strany", m, &links)
-	links.Add("https://meduza.io/news/2018/03/11/v-kitae-otmenili-ogranichenie-sroka-prebyvaniya-u-vlasti-dlya-lidera-strany")
+	//	links.Add("https://meduza.io/news/2018/03/11/v-kitae-otmenili-ogranichenie-sroka-prebyvaniya-u-vlasti-dlya-lidera-strany")
+	links.Add("https://meduza.io/")
 
 	var i int = 0
 	for next, exists := links.Remove(); exists; {
 		fmt.Println("Links for downloading: ", len(links))
 		fmt.Println("Total links: ", len(m))
 		fmt.Println("Next: ", next)
+
+		defer recover()
 
 		doc, err := goquery.NewDocument(next)
 		if err != nil {

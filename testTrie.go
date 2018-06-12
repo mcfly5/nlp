@@ -48,6 +48,7 @@ type Node struct {
 //func (Node) addLemme(str string) {}
 
 var rootNode *Node
+var countMaps int = 1
 
 func main() {
 	//Read dictionary
@@ -80,6 +81,16 @@ func main() {
 	fmt.Println(findStringInTrie("кот"))
 	fmt.Println(findStringInTrie("подчеркивалось"))
 	fmt.Println(findStringInTrie("отчужденно"))
+	fmt.Println(findStringInTrie("четырехмерном"))
+	fmt.Println(findStringInTrie("затускнела"))
+	fmt.Println(findStringInTrie("суицидальных"))
+	fmt.Println(findStringInTrie("крисмаров"))
+	fmt.Println(findStringInTrie("северославянской"))
+	fmt.Println(findStringInTrie("стакашек"))
+	fmt.Println(findStringInTrie("переодевалок"))
+	fmt.Println(findStringInTrie("обалконенной"))
+	fmt.Println(findStringInTrie("левиного"))
+	fmt.Println("Maps : ", countMaps)
 
 }
 
@@ -127,6 +138,7 @@ func addStringToTrie(id int, word string) {
 
 		if _, ok := currentNode.letters[runeT]; !ok {
 			//currentNode.lemmes = append(currentNode.lemmes, word)
+			countMaps++
 			currentNode.letters[runeT] = new(Node)
 			currentNode.letters[runeT].letters = make(map[rune]*Node)
 			//fmt.Printf("\t#v+", currentNode.lemmes)
